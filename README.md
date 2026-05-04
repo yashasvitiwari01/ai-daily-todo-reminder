@@ -90,12 +90,14 @@ Run:
 20260503120000_reminders_and_push.sql
 
 3) Set Edge Function secrets (Supabase project)
-SUPABASE_URL=your_project_url
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-VAPID_PUBLIC_KEY=your_vapid_public_key
-VAPID_PRIVATE_KEY=your_vapid_private_key
-WEB_PUSH_CONTACT=mailto:you@example.com
-CRON_SECRET=strong_random_secret
+-> SUPABASE_URL=your_project_url (no need to manually add this. Supabase injects reserved SUPABASE_* env vars automatically at runtime)
+-> SUPABASE_SERVICE_ROLE_KEY=your_service_role_key  (no need to manually add this. Supabase injects reserved SUPABASE_* env vars automatically at runtime)
+-> VAPID_PUBLIC_KEY=your_vapid_public_key
+-> VAPID_PRIVATE_KEY=your_vapid_private_key
+-> WEB_PUSH_CONTACT=mailto:you@example.com (Is required by the Web Push protocol when you set VAPID details. Push services (like Google/Firefox push endpoints) expect an app identity/contact with VAPID.
+If there’s abuse, delivery issues, or policy problems, this gives a responsible contact.
+Add here your email id or any valid contact url e.g. e.g. https://yourdomain.com/contact)
+-> CRON_SECRET=strong_random_secret (can get from running in poweshell: [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 })))
 
 4) Deploy reminder function
 supabase functions deploy reminder-cron

@@ -260,7 +260,6 @@ function App() {
       morning_hour: morningHour,
       evening_hour: eveningHour,
     });
-    setPushMessage(r.message);
     if (r.ok) {
       setCommittedTimezone(timezone);
       setCommittedMorningHour(morningHour);
@@ -271,6 +270,7 @@ function App() {
   };
 
   const enableNotifications = async () => {
+    console.log('enableNotifications');
     const perm = await requestNotificationPermission();
     if (perm !== 'granted') {
       setPushMessage('Notification permission was not granted.');
