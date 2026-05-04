@@ -79,6 +79,41 @@ VITE_SUPABASE_URL
 VITE_SUPABASE_ANON_KEY
 If using GitHub Pages, ensure the Vite base path matches your repository name.
 
+#Background Reminder Setup (app can stay closed)
+To deliver morning/evening reminders and overnight rollover even when the app tab is closed, set up Web Push + Supabase cron.
+
+1) Add frontend push key in `.env`
+VITE_VAPID_PUBLIC_KEY=your_vapid_public_key
+
+2) Deploy DB migration for reminder state + subscriptions
+Run:
+20260503120000_reminders_and_push.sql
+
+3) Set Edge Function secrets (Supabase project)
+SUPABASE_URL=your_project_url
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+VAPID_PUBLIC_KEY=your_vapid_public_key
+VAPID_PRIVATE_KEY=your_vapid_private_key
+WEB_PUSH_CONTACT=mailto:you@example.com
+CRON_SECRET=strong_random_secret
+
+4) Deploy reminder function
+supabase functions deploy reminder-cron
+
+5) Schedule function every 10-15 minutes
+Call the function URL from your scheduler (GitHub Actions, cron-job.org, or Supabase scheduler if available):
+https://<project-ref>.functions.supabase.co/reminder-cron
+Send header:
+X-Cron-Secret: <CRON_SECRET>
+
+6) Enable push on device
+Open app once, click "Enable push reminders", and allow browser notifications.
+
+Notes:
+- Morning reminder: once after configured morning hour until noon (device timezone setting in app).
+- Evening reminder: once after configured evening hour (default 5 PM).
+- If evening review is skipped, pending tasks roll over overnight automatically and next morning notification includes rollover context.
+
 #Security Notes
 Current migration includes a development policy that allows anonymous access to tasks.
 Before production, tighten RLS policies and enforce authenticated access per user.

@@ -1,57 +1,43 @@
-export interface ScheduleCallback {
-  (): Promise<void> | void;
+/**
+ * Browser notifications when the tab becomes visible in the morning (optional complement to Web Push).
+ * Background reminders require the Supabase `reminder-cron` Edge Function + push subscription.
+ */
+export function requestNotificationPermission(): Promise<NotificationPermission> {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return Promise.resolve('denied');
+  }
+  if (Notification.permission === 'default') {
+    return Notification.requestPermission();
+  }
+  return Promise.resolve(Notification.permission);
 }
 
-class Scheduler {
-  private timers: Map<string, NodeJS.Timeout> = new Map();
-  private lastCheckedDay: string = '';
-
-  start(callback: ScheduleCallback) {
-    this.scheduleCheck(callback);
-    setInterval(() => this.scheduleCheck(callback), 60000);
+/** Show a one-time local notification after opening the browser before noon (same calendar day, local timezone). */
+export function scheduleMorningVisibilityPing(): () => void {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return () => {};
   }
 
-  private scheduleCheck(callback: ScheduleCallback) {
-    const now = new Date();
-    const currentDay = now.toISOString().split('T')[0];
-    const hour = now.getHours();
-    const minutes = now.getMinutes();
+  const now = new Date();
+  const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate(),
+  ).padStart(2, '0')}`;
+  const storageKey = `morning_visibility_ping_${todayLocal}`;
 
-    const shouldRunAt9am = hour === 9 && minutes === 0 && currentDay !== this.lastCheckedDay;
-    const shouldRunAt5pm = hour === 17 && minutes === 0 && currentDay !== this.lastCheckedDay;
+  const tryPing = () => {
+    if (document.visibilityState !== 'visible') return;
+    if (Notification.permission !== 'granted') return;
+    const hour = new Date().getHours();
+    if (hour >= 12) return;
+    if (sessionStorage.getItem(storageKey)) return;
+    sessionStorage.setItem(storageKey, '1');
+    new Notification("Today's tasks", {
+      body: 'Open Daily Tasks to see what you planned for today.',
+    });
+  };
 
-    if (shouldRunAt9am || shouldRunAt5pm) {
-      this.lastCheckedDay = currentDay;
+  document.addEventListener('visibilitychange', tryPing);
+  tryPing();
 
-      if (shouldRunAt9am) {
-        this.showNotification('Good morning! Time to review your tasks for today.');
-      } else {
-        this.showNotification('Evening check-in: Review pending tasks and plan for tomorrow.');
-      }
-
-      callback();
-    }
-  }
-
-  private showNotification(message: string) {
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('Task Reminder', {
-        body: message,
-        icon: '/task-icon.png',
-      });
-    }
-  }
-
-  requestPermission() {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }
-
-  clear() {
-    this.timers.forEach((timer) => clearInterval(timer));
-    this.timers.clear();
-  }
+  return () => document.removeEventListener('visibilitychange', tryPing);
 }
-
-export const scheduler = new Scheduler();

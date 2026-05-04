@@ -8,6 +8,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export interface Task {
   id: string;
   user_id: string | null;
+  client_id?: string;
   title: string;
   completed: boolean;
   task_date: string;
