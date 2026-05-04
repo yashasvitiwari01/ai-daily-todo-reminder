@@ -8,6 +8,7 @@ import {
   Bell,
   AlertCircle,
   Moon,
+  Globe,
 } from 'lucide-react';
 import { supabase, Task } from './lib/supabase';
 import TaskItem from './components/TaskItem';
@@ -28,6 +29,10 @@ import {
   subscribeToPushAndSave,
 } from './lib/push';
 
+function formatHourLabel(h: number): string {
+  return `${String(h).padStart(2, '0')}:00`;
+}
+
 function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,6 +48,14 @@ function App() {
   );
   const [morningHour, setMorningHour] = useState(8);
   const [eveningHour, setEveningHour] = useState(17);
+
+  /** Saved reminder prefs loaded from DB (or after first successful save / push subscribe). */
+  const [schedulePrefsHydrated, setSchedulePrefsHydrated] = useState(false);
+  const [hasCommittedSchedule, setHasCommittedSchedule] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState(false);
+  const [committedTimezone, setCommittedTimezone] = useState('UTC');
+  const [committedMorningHour, setCommittedMorningHour] = useState(8);
+  const [committedEveningHour, setCommittedEveningHour] = useState(17);
 
   const clientId = getClientId();
 
@@ -75,10 +88,22 @@ function App() {
       .maybeSingle()
       .then(({ data }) => {
         if (data) {
-          setTimezone(data.timezone ?? 'UTC');
-          setMorningHour(data.morning_hour ?? 8);
-          setEveningHour(data.evening_hour ?? 17);
+          const tz = data.timezone ?? 'UTC';
+          const mh = data.morning_hour ?? 8;
+          const eh = data.evening_hour ?? 17;
+          setTimezone(tz);
+          setMorningHour(mh);
+          setEveningHour(eh);
+          setCommittedTimezone(tz);
+          setCommittedMorningHour(mh);
+          setCommittedEveningHour(eh);
+          setHasCommittedSchedule(true);
+          setEditingSchedule(false);
+        } else {
+          setHasCommittedSchedule(false);
+          setEditingSchedule(true);
         }
+        setSchedulePrefsHydrated(true);
       });
 
     void supabase
@@ -236,6 +261,13 @@ function App() {
       evening_hour: eveningHour,
     });
     setPushMessage(r.message);
+    if (r.ok) {
+      setCommittedTimezone(timezone);
+      setCommittedMorningHour(morningHour);
+      setCommittedEveningHour(eveningHour);
+      setHasCommittedSchedule(true);
+      setEditingSchedule(false);
+    }
   };
 
   const enableNotifications = async () => {
@@ -250,7 +282,21 @@ function App() {
       evening_hour: eveningHour,
     });
     setPushMessage(r.message);
-    if (r.ok) setNotificationsEnabled(true);
+    if (r.ok) {
+      setNotificationsEnabled(true);
+      setCommittedTimezone(timezone);
+      setCommittedMorningHour(morningHour);
+      setCommittedEveningHour(eveningHour);
+      setHasCommittedSchedule(true);
+      setEditingSchedule(false);
+    }
+  };
+
+  const cancelScheduleEdit = () => {
+    setTimezone(committedTimezone);
+    setMorningHour(committedMorningHour);
+    setEveningHour(committedEveningHour);
+    setEditingSchedule(false);
   };
 
   const recordEveningReview = async () => {
@@ -266,6 +312,13 @@ function App() {
       },
       { onConflict: 'client_id' },
     );
+    if (!error) {
+      setCommittedTimezone(timezone);
+      setCommittedMorningHour(morningHour);
+      setCommittedEveningHour(eveningHour);
+      setHasCommittedSchedule(true);
+      setEditingSchedule(false);
+    }
     setPushMessage(
       error
         ? error.message
@@ -315,22 +368,6 @@ function App() {
             </div>
           </div>
 
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-100 rounded-lg text-sm text-blue-900">
-            <p className="font-medium">Background reminders</p>
-            <p className="mt-1 text-blue-800/90">
-              Enable notifications and deploy the <code className="text-xs bg-blue-100 px-1 rounded">reminder-cron</code>{' '}
-              Edge Function on a schedule (for example every 10–15 minutes). Uses Web Push so alerts can arrive when this
-              tab is closed. Morning time defaults to 8:00 in your chosen timezone; evening is 5:00 PM. Opening your
-              browser before noon also shows a gentle local reminder when notifications are allowed.
-            </p>
-            {!hasVapid && (
-              <p className="mt-2 text-amber-800">
-                Set <code className="text-xs bg-amber-100 px-1 rounded">VITE_VAPID_PUBLIC_KEY</code> in{' '}
-                <code className="text-xs bg-amber-100 px-1 rounded">.env</code> to enable Web Push.
-              </p>
-            )}
-          </div>
-
           {pushMessage && (
             <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700">
               {pushMessage}
@@ -338,55 +375,103 @@ function App() {
           )}
 
           <div className="mb-6 p-4 bg-slate-50 rounded-lg space-y-3">
-            <p className="text-sm font-medium text-gray-700">Reminder schedule (for server push)</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <label className="block text-xs text-gray-600">
-                Timezone
-                <select
-                  value={timezone}
-                  onChange={(e) => setTimezone(e.target.value)}
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 text-sm"
+            {!schedulePrefsHydrated ? (
+              <p className="text-sm text-gray-600">Loading your preferences…</p>
+            ) : hasCommittedSchedule && !editingSchedule ? (
+              <>
+                <p className="text-sm font-medium text-gray-700">Your reminder schedule</p>
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  <span className="font-medium text-gray-800">Timezone:</span> {committedTimezone}
+                  <span className="mx-2 text-gray-300">·</span>
+                  <span className="font-medium text-gray-800">Morning hour:</span>{' '}
+                  {formatHourLabel(committedMorningHour)}
+                  <span className="mx-2 text-gray-300">·</span>
+                  <span className="font-medium text-gray-800">Evening hour:</span>{' '}
+                  {formatHourLabel(committedEveningHour)}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setEditingSchedule(true)}
+                  className="text-sm px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 inline-flex items-center gap-2"
                 >
-                  {!(COMMON_TIMEZONES as readonly string[]).includes(timezone) && (
-                    <option value={timezone}>{timezone} (detected)</option>
+                  <Globe className="w-4 h-4 text-gray-500" aria-hidden />
+                  Change timezone preference
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-gray-700">
+                  {hasCommittedSchedule
+                    ? 'Update your reminder schedule'
+                    : 'Set your timezone once'}
+                </p>
+                {!hasCommittedSchedule && (
+                  <p className="text-xs text-gray-600">
+                    Choose your timezone and when you want morning and evening reminders. You can change
+                    this later using &quot;Change timezone preference&quot;.
+                  </p>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <label className="block text-xs text-gray-600">
+                    Your timezone
+                    <select
+                      value={timezone}
+                      onChange={(e) => setTimezone(e.target.value)}
+                      className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 text-sm"
+                    >
+                      {!(COMMON_TIMEZONES as readonly string[]).includes(timezone) && (
+                        <option value={timezone}>{timezone} (detected)</option>
+                      )}
+                      {COMMON_TIMEZONES.map((z) => (
+                        <option key={z} value={z}>
+                          {z}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-xs text-gray-600">
+                    Preferred morning hour (0–23)
+                    <input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={morningHour}
+                      onChange={(e) => setMorningHour(Number(e.target.value))}
+                      className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="block text-xs text-gray-600">
+                    Preferred evening hour (0–23)
+                    <input
+                      type="number"
+                      min={0}
+                      max={23}
+                      value={eveningHour}
+                      onChange={(e) => setEveningHour(Number(e.target.value))}
+                      className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 text-sm"
+                    />
+                  </label>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void saveSettings()}
+                    className="text-sm px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Save schedule
+                  </button>
+                  {hasCommittedSchedule && (
+                    <button
+                      type="button"
+                      onClick={cancelScheduleEdit}
+                      className="text-sm px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
                   )}
-                  {COMMON_TIMEZONES.map((z) => (
-                    <option key={z} value={z}>
-                      {z}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs text-gray-600">
-                Morning hour (0–23)
-                <input
-                  type="number"
-                  min={0}
-                  max={23}
-                  value={morningHour}
-                  onChange={(e) => setMorningHour(Number(e.target.value))}
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 text-sm"
-                />
-              </label>
-              <label className="block text-xs text-gray-600">
-                Evening hour (0–23)
-                <input
-                  type="number"
-                  min={0}
-                  max={23}
-                  value={eveningHour}
-                  onChange={(e) => setEveningHour(Number(e.target.value))}
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-2 text-sm"
-                />
-              </label>
-            </div>
-            <button
-              type="button"
-              onClick={() => void saveSettings()}
-              className="text-sm px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              Save schedule
-            </button>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="flex items-center justify-between mb-8 p-4 bg-slate-50 rounded-lg flex-wrap gap-2">
